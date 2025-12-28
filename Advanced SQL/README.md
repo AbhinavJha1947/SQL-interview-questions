@@ -8,58 +8,54 @@ This section covers deep-dive SQL topics including Window Functions, Query Optim
 
 1. [JSON & XML Support](#json--xml-support)
 2. [Window Functions (Analytic)](#window-functions-analytic)
-    - [What are window functions](#what-are-window-functions)
     - [Syntax building blocks](#syntax-building-blocks)
-    - [Ranking functions](#ranking-functions)
-    - [Offset functions](#offset-functions)
-    - [Windowed aggregates](#windowed-aggregates)
-    - [Percentiles and distributions](#percentiles-and-distributions)
-    - [De-duplication pattern](#de-duplication-pattern)
+    - [ROWS vs RANGE — common interview question](#rows-vs-range--common-interview-question)
+    - [Ranking, Offset, and Aggregate functions](#ranking-functions)
     - [Gaps and islands](#gaps-and-islands)
-    - [Performance and indexes](#performance-and-indexes-for-windows)
-3. [Common Table Expressions (CTE)](#common-table-expressions-cte)
-    - [Advanced CTE Usage](#advanced-cte-usage)
+3. [Common Table Expressions (CTE) & HierarchyID](#common-table-expressions-cte--hierarchyid)
     - [Recursive CTEs & Cycle Detection](#recursive-cte--hierarchies-and-graphs)
+    - [HierarchyID data type](#hierarchyid-data-type)
 4. [Dynamic SQL](#dynamic-sql)
-    - [EXEC vs sp_executesql](#exec-vs-sp_executesql)
+    - [EXEC vs sp_executesql & Parameter Sniffing](#exec-vs-sp_executesql--parameter-sniffing)
     - [Optional predicates and safety](#building-optional-predicates-safely)
-    - [Dynamic PIVOT and ORDER BY](#dynamic-pivot-and-dynamic-order-by)
-    - [Permissions and injection safety](#permissions-and-injection-safety)
 5. [Performance & Optimization](#performance--optimization)
     - [Execution plans](#execution-plans--actual-vs-estimated)
-    - [Query optimization guidelines](#query-optimization--practical-guidelines)
-    - [Query hints](#query-hints--use-sparingly)
-    - [Statistics](#statistics--column-and-index-stats)
-    - [Partitioning](#partitioning--range-list-hash)
+    - [SARGability — Good vs Bad queries](#sargability--good-vs-bad-queries)
+    - [Deadlocks — Handling & Detection](#deadlocks--handling--detection)
+    - [Statistics & Partitioning](#statistics--column-and-index-stats)
+    - [Index Maintenance — Rebuild vs Reorganize](#index-maintenance--rebuild-vs-reorganize)
     - [Query Store](#query-store-sql-server)
-    - [Query rewrites](#query-rewrites--common-transformations)
-6. [Pivot & Unpivot](#pivot--unpivot)
-7. [Advanced Joins & Set Patterns](#advanced-joins--set-patterns)
-    - [LATERAL / APPLY](#lateral-postgresql)
-    - [Anti-join / Semi-join patterns](#anti-join-patterns)
-8. [Advanced Data Types](#advanced-data-types)
-    - [Arrays, HSTORE, JSONB](#arrays-postgresql)
-    - [Spatial types](#spatial-types--geometrygeography)
-    - [User-defined types & ENUM](#user-defined-types-udt)
-9. [Sequences & Identity](#sequences--identity)
-10. [Data Import/Export](#data-importexport)
-11. [Security & Permissions](#security--permissions)
-12. [Backup & Recovery](#backup--recovery)
-13. [Monitoring & Maintenance](#database-monitoring--maintenance)
+6. [Advanced Joins & Set Patterns](#advanced-joins--set-patterns)
+7. [Advanced Data Types & Security](#advanced-data-types--security)
+    - [Spatial, Arrays, JSONB](#spatial-types--geometrygeography)
+    - [Advanced Security (DDM, Always Encrypted)](#advanced-security-ddm-always-encrypted)
+8. [Administration: Import/Export, Backup, Monitoring](#administration-importexport-backup-monitoring)
 
 ---
 
 ## JSON & XML Support
 
-### JSON_VALUE / JSON_QUERY / OPENJSON
-**Query:**
+### Parsing with JSON_VALUE / JSON_QUERY / OPENJSON
+**Query (JSON):**
 ```sql
-SELECT JSON_VALUE(Meta, '$.source') AS Source
-FROM dbo.Events;
+DECLARE @json NVARCHAR(MAX) = N'{"id": 1, "metadata": {"source": "web"}}';
+SELECT JSON_VALUE(@json, '$.metadata.source') AS Source;
+
+-- OPENJSON to table
+SELECT * FROM OPENJSON(@json) WITH (id INT '$.id', source NVARCHAR(50) '$.metadata.source');
 ```
 
-### XML nodes()
-**Query:**
+### Generating with FOR JSON & FOR XML
+Convert query results into structured documents.
+
+**Query (JSON):**
+```sql
+SELECT TOP 5 CustomerID, CustomerName
+FROM dbo.Customers
+FOR JSON PATH, ROOT('Customers');
+```
+
+**Query (XML nodes()):**
 ```sql
 SELECT x.n.value('@id','int') AS Id, x.n.value('name[1]','nvarchar(100)') AS Name
 FROM dbo.XmlData CROSS APPLY XmlCol.nodes('/items/item') AS x(n);
@@ -87,9 +83,21 @@ Compute values across a set of rows related to the current row without collapsin
 ```
 
 **Notes:**
-- `PARTITION BY` groups rows into independent windows.
-- `ORDER BY` defines sequence within each partition.
 - Frame (`ROWS` or `RANGE`) narrows which ordered rows contribute to the function.
+
+### ROWS vs RANGE — common interview question
+- **ROWS:** Operates on physical row offsets from the current row. Predictable performance.
+- **RANGE:** Operates on logically identical values based on the `ORDER BY` column. 
+- **Performance:** `ROWS` is generally faster. `RANGE` with `UNBOUNDED PRECEDING` is the default but can be slower if there are many duplicate values in the ordering column.
+
+**Query Example:**
+```sql
+-- Running total using ROWS (Faster)
+SUM(Amount) OVER (ORDER BY OrderDate ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+
+-- Running total using RANGE (Default, potential speed trap)
+SUM(Amount) OVER (ORDER BY OrderDate RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+```
 
 ### Ranking functions — ROW_NUMBER, RANK, DENSE_RANK, NTILE
 **Query:**
@@ -185,7 +193,7 @@ ORDER BY UserID, start_date;
 
 ---
 
-## Common Table Expressions (CTE)
+## Common Table Expressions (CTE) & HierarchyID
 
 ### What is a CTE and when to use it
 A named result set defined just before a statement, scoped to that statement. Improves readability and enables recursion.
@@ -249,6 +257,23 @@ WITH RECURSIVE GraphCTE AS (
 SELECT * FROM GraphCTE;
 ```
 
+### HierarchyID data type
+Used to store and query hierarchical data efficiently within a single column.
+
+**Query Example:**
+```sql
+CREATE TABLE OrgChart (
+    Node HIERARCHYID PRIMARY KEY,
+    EmployeeName NVARCHAR(100)
+);
+
+-- Insert top level
+INSERT INTO OrgChart (Node, EmployeeName) VALUES ('/', 'CEO');
+-- Insert report to CEO
+DECLARE @CEO HIERARCHYID = (SELECT Node FROM OrgChart WHERE EmployeeName = 'CEO');
+INSERT INTO OrgChart (Node, EmployeeName) VALUES (@CEO.GetDescendant(NULL, NULL), 'VP');
+```
+
 [⬆ Back to Top](#table-of-contents)
 
 ---
@@ -258,19 +283,20 @@ SELECT * FROM GraphCTE;
 ### What and why
 Constructing SQL strings at runtime to handle variable filters or dynamic object names. **Always parameterize user input** to prevent SQL injection.
 
-### sp_executesql — parameterized dynamic SQL (SQL Server)
-Executes a parameterized statement for plan reuse and safety.
+### EXEC vs sp_executesql — Parameter Sniffing
+`sp_executesql` is superior as it supports parameterization, improving security and plan reuse. 
+
+**Parameter Sniffing:** Occurs when the SQL optimizer creates an execution plan based on the specific parameter values passed during the first compilation. This plan might be inefficient for other values.
+
+**Fixing it:**
+- Use `OPTION (RECOMPILE)` for highly skewed data.
+- Use `OPTIMIZE FOR (@Param = Value)` or `OPTIMIZE FOR UNKNOWN`.
+- Local variables (can sometimes hide the value from the optimizer).
 
 **Query:**
 ```sql
-DECLARE @sql NVARCHAR(MAX) = N'
-  SELECT OrderID, CustomerID, TotalAmount
-  FROM dbo.Orders
-  WHERE (@custId IS NULL OR CustomerID = @custId)
-    AND OrderDate >= @since
-  ORDER BY OrderDate DESC';
-DECLARE @params NVARCHAR(200) = N'@custId INT, @since DATETIME2';
-EXEC sp_executesql @sql, @params, @custId = @CustomerID, @since = @SinceDate;
+DECLARE @sql NVARCHAR(MAX) = N'SELECT * FROM Orders WHERE ClientID = @id';
+EXEC sp_executesql @sql, N'@id INT', @id = 101 OPTION (RECOMPILE);
 ```
 
 ### Building optional predicates safely
@@ -316,11 +342,27 @@ SET SHOWPLAN_XML ON;
 SET STATISTICS XML ON;
 ```
 
-### Query optimization — practical guidelines
-- **Select only needed columns.** Avoid `SELECT *`.
-- **Filter early and sargably.** Avoid functions on indexed columns in predicates.
-- **Prefer set-based operations.** Replace cursors with joins and window functions.
-- **Watch for OR-heavy predicates.** Consider `UNION ALL`.
+### SARGability — Good vs Bad queries
+SARGable (Search ARGumentable) queries allow the optimizer to use index seeks instead of full scans.
+
+- **Bad (Non-SARGable):** `WHERE YEAR(OrderDate) = 2024` (Wrapped in function)
+- **Good (SARGable):** `WHERE OrderDate >= '2024-01-01' AND OrderDate < '2025-01-01'`
+
+- **Bad:** `WHERE Name LIKE '%Smith'` (Leading wildcard)
+- **Good:** `WHERE Name LIKE 'Smith%'`
+
+### Deadlocks — Handling & Detection
+A deadlock occurs when two processes hold locks that the other needs, creating a cycle.
+
+- **Detection:** SQL Server automatically detects deadlocks and kills one "victim" based on deadlock priority.
+- **Monitoring:** Use **Extended Events (`xml_deadlock_report`)** or Profiler.
+- **Resolution:**
+    - Access objects in the same order across all transactions.
+    - Keep transactions short.
+    - Use lower isolation levels (e.g., Read Committed Snapshot) if appropriate.
+    - Implement retry logic in application code.
+
+[⬆ Back to Top](#table-of-contents)
 
 ### Query hints — use sparingly
 Overrides the optimizer. Examples include `FORCESEEK`, `OPTION (RECOMPILE)`, and `MAXDOP`.
@@ -333,6 +375,16 @@ UPDATE STATISTICS dbo.Orders WITH FULLSCAN; -- SQL Server
 ANALYZE VERBOSE public.orders; -- PostgreSQL
 ```
 
+### Index Maintenance — Rebuild vs Reorganize
+- **Reorganize:** (< 30% fragmentation) Online operation, defragments leaf level of indexes.
+- **Rebuild:** (> 30% fragmentation) Can be offline or online (Enterprise), drops and recreates the index entirely.
+
+**Query:**
+```sql
+ALTER INDEX IX_Orders_Date ON dbo.Orders REORGANIZE;
+ALTER INDEX IX_Orders_Date ON dbo.Orders REBUILD WITH (ONLINE = ON);
+```
+
 ### Partitioning — range, list, hash
 Splits large tables horizontally to improve maintenance and pruning.
 **Query (SQL Server):**
@@ -343,31 +395,6 @@ CREATE PARTITION SCHEME ps_Orders AS PARTITION pf_OrderDate ALL TO ([PRIMARY]);
 
 ### Query Store (SQL Server)
 Captures query texts, plans, and runtime stats over time for regression analysis.
-
-[⬆ Back to Top](#table-of-contents)
-
----
-
-## Pivot & Unpivot
-
-### PIVOT (SQL Server)
-**Query:**
-```sql
-SELECT ProductName, [Jan],[Feb],[Mar]
-FROM (
-  SELECT ProductName, DATENAME(month, OrderDate) AS [Month], Quantity
-  FROM dbo.Sales
-) s
-PIVOT (SUM(Quantity) FOR [Month] IN ([Jan],[Feb],[Mar])) p;
-```
-
-### UNPIVOT (SQL Server)
-**Query:**
-```sql
-SELECT ProductName, [Month], Qty
-FROM dbo.SalesByMonth
-UNPIVOT (Qty FOR [Month] IN ([Jan],[Feb],[Mar])) AS u;
-```
 
 [⬆ Back to Top](#table-of-contents)
 
@@ -405,7 +432,7 @@ WHERE EXISTS (SELECT 1 FROM dbo.Orders o WHERE o.CustomerID = c.CustomerID);
 
 ---
 
-## Advanced Data Types
+## Advanced Data Types & Security
 
 ### Arrays, HSTORE, JSONB (PostgreSQL)
 **JSONB Query:**
@@ -424,6 +451,16 @@ WHERE Loc.STDistance(geography::Point(37.819, -122.478, 4326)) <= 5000;
 **ENUM Query (PostgreSQL):**
 ```sql
 CREATE TYPE order_status AS ENUM ('new','processing','shipped','cancelled');
+```
+
+### Advanced Security (DDM, Always Encrypted)
+- **Dynamic Data Masking (DDM):** Limits sensitive data exposure by masking it in the result set for non-privileged users.
+- **Always Encrypted:** Data is encrypted at the client-side; SQL Server never see the plaintext values, protecting against high-privileged but unauthorized access (like DBAs).
+
+**Query (DDM Example):**
+```sql
+ALTER TABLE Users
+ALTER COLUMN Email ADD MASKED WITH (FUNCTION = 'email()');
 ```
 
 [⬆ Back to Top](#table-of-contents)

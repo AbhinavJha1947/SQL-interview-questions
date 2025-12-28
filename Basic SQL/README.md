@@ -34,15 +34,24 @@ This section covers foundational SQL concepts including Data Definition Language
     - [COUNT, SUM, AVG, MIN, MAX](#count-sum-avg-min-max)
     - [GROUP BY — grouping rows](#group-by--grouping-rows)
     - [HAVING — filter groups](#having--filter-groups)
+    - [WHERE vs HAVING — common interview question](#where-vs-having--common-interview-question)
 5. [String Functions](#string-functions)
     - [CONCAT, SUBSTRING, LEN, UPPER/LOWER, TRIM, REPLACE, CHARINDEX](#concat-substring-len-upperlower-trim-replace-charindex)
-6. [Date/Time Functions](#datetime-functions)
-    - [GETUTCDATE, SYSUTCDATETIME, DATEADD, DATEDIFF, DATEPART, CONVERT/CAST](#getutcdate-sysutcdatetime-dateadd-datediff-datepart-convertcast)
+6. [Date/Time Functions](#date-time-functions)
+    - [GETUTCDATE, SYSUTCDATETIME, DATEADD, DATEDIFF, DATEPART, CONVERT/CAST](#date-time-functions)
 7. [Numeric Functions](#numeric-functions)
-    - [ROUND, CEILING, FLOOR, ABS, POWER, SQRT, %](#round-ceiling-floor-abs-power-sqrt-)
+    - [ROUND, CEILING, FLOOR, ABS, POWER, SQRT, %](#numeric-functions)
 8. [Conditional Logic](#conditional-logic)
-    - [CASE — simple and searched](#case--simple-and-searched)
-    - [COALESCE, NULLIF, ISNULL, IIF](#coalesce-nullif-isnull-iif)
+    - [CASE — simple and searched](#conditional-logic)
+    - [COALESCE, NULLIF, ISNULL, IIF](#conditional-logic)
+9. [SQL Constraints](#sql-constraints)
+    - [PK, FK, UNIQUE, CHECK, DEFAULT](#pk-fk-unique-check-default)
+10. [Basic Transactions](#basic-transactions)
+    - [BEGIN, COMMIT, ROLLBACK](#begin-commit-rollback)
+11. [Data Types Overview](#data-types-overview)
+    - [Numeric, String, Date/Time](#numeric-string-date-time)
+12. [NULL Logic & Comparisons](#null-logic--comparisons)
+    - [IS NULL vs = NULL](#is-null-vs--null)
 
 ---
 
@@ -181,7 +190,13 @@ SELECT * FROM Invoices WHERE InvoiceDate BETWEEN '2025-01-01' AND '2025-12-31';
 ### LIKE — pattern matching
 **Query:**
 ```sql
-SELECT * FROM Users WHERE Email LIKE '%@example.com';
+SELECT * FROM Users WHERE Email LIKE '%@example.com'; -- Ends with
+SELECT * FROM Users WHERE Email LIKE 'Admin%';        -- Starts with
+SELECT * FROM Users WHERE Email LIKE '%support%';     -- Contains
+SELECT * FROM Users WHERE Name LIKE 'J_n';            -- _ matches single character (e.g., Jon, Jan)
+SELECT * FROM Users WHERE Name LIKE '[ABC]%';        -- Starts with A, B, or C
+SELECT * FROM Users WHERE Name LIKE '[A-M]%';        -- Starts with range A to M
+SELECT * FROM Users WHERE Name LIKE '[^A]%';         -- Does NOT start with A
 ```
 
 ### IS NULL / IS NOT NULL
@@ -240,6 +255,21 @@ SELECT Country, COUNT(*) AS Cnt
 FROM Customers
 GROUP BY Country
 HAVING COUNT(*) >= 100;
+```
+
+### WHERE vs HAVING — common interview question
+- **WHERE:** Filters rows **before** any grouping occurs. Cannot use aggregate functions (like `SUM` or `COUNT`).
+- **HAVING:** Filters groups **after** `GROUP BY` has been applied. Used specifically with aggregate functions.
+
+**Example Comparison:**
+```sql
+-- Filter customers whose ID > 10 (WHERE)
+-- AND then filter states with more than 5 such customers (HAVING)
+SELECT State, COUNT(*)
+FROM Customers
+WHERE CustomerID > 10
+GROUP BY State
+HAVING COUNT(*) > 5;
 ```
 
 [⬆ Back to Top](#table-of-contents)
@@ -312,6 +342,95 @@ SELECT COALESCE(Phone,'N/A') AS PhoneSafe,
        NULLIF(Status,'Unknown') AS StatusClean,
        IIF(IsActive=1,'Active','Inactive') AS StatusTxt
 FROM Customers;
+```
+
+[⬆ Back to Top](#table-of-contents)
+
+---
+
+## SQL Constraints
+
+### PK, FK, UNIQUE, CHECK, DEFAULT
+Constraints define rules for data in a table to ensure integrity.
+
+- **PRIMARY KEY (PK):** Uniquely identifies each row; cannot be NULL.
+- **FOREIGN KEY (FK):** Ensures referential integrity between tables.
+- **UNIQUE:** Ensures all values in a column are distinct.
+- **CHECK:** Ensures all values in a column satisfy a specific condition.
+- **DEFAULT:** Provides a default value if none is specified.
+
+**Query Example:**
+```sql
+CREATE TABLE Products (
+    ProductID INT PRIMARY KEY,
+    SKU NVARCHAR(50) UNIQUE,
+    Price DECIMAL(18,2) CHECK (Price > 0),
+    CategoryID INT FOREIGN KEY REFERENCES Categories(CategoryID),
+    CreatedAt DATETIME DEFAULT GETUTCDATE()
+);
+```
+
+[⬆ Back to Top](#table-of-contents)
+
+---
+
+## Basic Transactions
+
+### BEGIN, COMMIT, ROLLBACK
+Transactions ensure that a series of operations are treated as a single unit of work (ACID properties).
+
+- **BEGIN TRANSACTION:** Starts a new transaction.
+- **COMMIT:** Saves all changes made during the transaction permanently.
+- **ROLLBACK:** Undoes all changes if an error occurs.
+
+**Query Example:**
+```sql
+BEGIN TRANSACTION;
+  UPDATE Accounts SET Balance = Balance - 100 WHERE AccountID = 1;
+  UPDATE Accounts SET Balance = Balance + 100 WHERE AccountID = 2;
+  -- If both succeed:
+COMMIT;
+-- If any fail:
+-- ROLLBACK;
+```
+
+[⬆ Back to Top](#table-of-contents)
+
+---
+
+## Data Types Overview
+
+### Numeric, String, Date/Time
+Commonly used data types in SQL Server:
+
+| Category | Data Types | Usage |
+| :--- | :--- | :--- |
+| **Numeric** | `INT`, `BIGINT`, `DECIMAL(p,s)`, `BIT` | IDs, counts, money, flags |
+| **String** | `CHAR(n)`, `VARCHAR(n)`, `NVARCHAR(n)`, `TEXT` | Fixed vs variable length, Unicode support |
+| **Date/Time** | `DATE`, `DATETIME2`, `TIME`, `DATETIMEOFFSET` | Calendar dates, timestamps with precision |
+| **Other** | `UNIQUEIDENTIFIER`, `VARBINARY` | GUIDs, file data |
+
+[⬆ Back to Top](#table-of-contents)
+
+---
+
+## NULL Logic & Comparisons
+
+### IS NULL vs = NULL
+In SQL, `NULL` represents an "unknown" value. Standard comparison operators (`=`, `<>`) do not work with `NULL` because `NULL = NULL` results in `UNKNOWN`, not `TRUE`.
+
+**Always use `IS NULL` or `IS NOT NULL`.**
+
+**Query Example:**
+```sql
+-- WRONG: Results in no rows even if there are NULLs
+SELECT * FROM Users WHERE DeletedAt = NULL;
+
+-- CORRECT:
+SELECT * FROM Users WHERE DeletedAt IS NULL;
+
+-- Using COALESCE to handle NULLs:
+SELECT UserID, COALESCE(MiddleName, '') AS MiddleNameClean FROM Users;
 ```
 
 [⬆ Back to Top](#table-of-contents)

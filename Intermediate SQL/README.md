@@ -19,50 +19,30 @@ This section covers more advanced SQL concepts including various types of Joins,
 2. [Set Operations (SQL Server)](#set-operations-sql-server)
     - [UNION — distinct union](#union--distinct-union)
     - [UNION ALL — append including duplicates](#union-all--append-including-duplicates)
+    - [UNION vs UNION ALL — behavior and performance](#union-vs-union-all--behavior-and-performance)
     - [INTERSECT — common rows](#intersect--common-rows)
     - [EXCEPT — rows in A not in B](#except--rows-in-a-not-in-b)
 3. [Subqueries (SQL Server)](#subqueries-sql-server)
     - [Scalar subquery — single value per row](#scalar-subquery--single-value-per-row)
     - [Correlated subquery — references outer row](#correlated-subquery--references-outer-row)
     - [IN / NOT IN with subqueries](#in--not-in-with-subqueries)
+    - [IN vs EXISTS — common interview question](#in-vs-exists--common-interview-question)
     - [ALL / ANY / SOME](#all--any--some)
     - [Derived tables (subquery in FROM)](#derived-tables-subquery-in-from)
 4. [Views (SQL Server)](#views-sql-server)
-    - [CREATE VIEW — virtual table](#create-view--virtual-table)
-    - [Updatable views — constraints](#updatable-views--constraints)
-    - [WITH SCHEMABINDING and indexed views](#with-schemabinding-and-indexed-views)
-    - [WITH CHECK OPTION — enforce view predicate](#with-check-option--enforce-view-predicate)
-    - [ALTER VIEW / DROP VIEW](#alter-view--drop-view)
-5. [Stored Procedures (SQL Server)](#stored-procedures-sql-server)
-    - [CREATE PROCEDURE — reusable T‑SQL](#create-procedure--reusable-t-sql)
-    - [Parameters, output, return codes](#parameters-output-return-codes)
-    - [TRY...CATCH error handling](#trycatch-error-handling)
-6. [User-Defined Functions (SQL Server)](#user-defined-functions-sql-server)
-    - [Scalar UDF — returns a single value](#scalar-udf--returns-a-single-value)
-    - [Inline Table-Valued Function (iTVF)](#inline-table-valued-function-itvf)
-7. [Triggers (SQL Server)](#triggers-sql-server)
-    - [DML triggers — AFTER/FOR](#dml-triggers--afterfor)
-    - [INSTEAD OF triggers — override action (views)](#instead-of-triggers--override-action-views)
-8. [Cursors (SQL Server)](#cursors-sql-server)
-    - [Declaration and fetch](#declaration-and-fetch)
-9. [Common Table Expressions (CTE)](#common-table-expressions-cte)
-    - [WITH syntax and scope](#with-syntax-and-scope)
-    - [Recursive CTE — hierarchies](#recursive-cte--hierarchies)
-10. [Temporary Tables & Table Variables (SQL Server)](#temporary-tables--table-variables-sql-server)
-    - [Overview — when to use temps vs CTE vs tables](#overview--when-to-use-temps-vs-cte-vs-tables)
-    - [Local temp tables #temp](#local-temp-tables-temp--features-and-indexing)
-    - [Table variables @table](#table-variables-table--pros-and-cons)
-    - [Global temp tables ##temp](#global-temp-tables-temp--coordination-use-only)
-    - [Temp table performance patterns](#temp-table-performance-patterns)
-    - [Compare: #temp vs @table](#compare-temp-vs-table)
-11. [CTAS (CREATE TABLE AS SELECT) — cross-engine note](#ctas-create-table-as-select--cross-engine-note)
-12. [Temporal Tables (system-versioned) — SQL Server](#temporal-tables-system-versioned--sql-server)
-13. [PIVOT / UNPIVOT](#pivot--unpivot)
-    - [PIVOT — rows to columns](#pivot--rows-to-columns)
-    - [UNPIVOT — columns to rows](#unpivot--columns-to-rows)
-14. [APPLY operators (SQL Server)](#apply-operators-sql-server)
-    - [CROSS APPLY / OUTER APPLY](#cross-apply--outer-apply)
-15. [JSON and XML (SQL Server specifics)](#json-and-xml-sql-server-specifics)
+5. [Stored Procedures & Functions](#stored-procedures-sql-server)
+    - [Stored Procedures (usp)](#stored-procedures-sql-server)
+    - [User-Defined Functions (udf)](#user-defined-functions-sql-server)
+    - [SP vs UDF — when to use which](#sp-vs-udf--when-to-use-which)
+6. [Triggers (SQL Server)](#triggers-sql-server)
+7. [Cursors (SQL Server)](#cursors-sql-server)
+8. [Common Table Expressions (CTE)](#common-table-expressions-cte)
+9. [Temporary Tables & Table Variables](#temporary-tables--table-variables-sql-server)
+10. [Temporal Tables & CTAS](#temporal-tables--ctas)
+11. [PIVOT / UNPIVOT](#pivot--unpivot)
+12. [APPLY operators (SQL Server)](#apply-operators-sql-server)
+13. [Transaction Isolation Levels](#transaction-isolation-levels)
+14. [Index Basics: Clustered vs Non-Clustered](#index-basics-clustered-vs-non-clustered)
 
 ---
 
@@ -165,6 +145,12 @@ UNION ALL
 SELECT Email FROM dbo.Users_EU;
 ```
 
+### UNION vs UNION ALL — behavior and performance
+- **UNION:** Merges result sets and performs a **distinct** operation to remove duplicates. This involves a sort/hash operation which can be expensive.
+- **UNION ALL:** Simply appends the result sets. No duplicate checking, thus significantly **faster**.
+
+**Interview Tip:** Always prefer `UNION ALL` unless you explicitly need to filter out duplicate rows.
+
 ### INTERSECT — common rows
 **Query:**
 ```sql
@@ -220,6 +206,11 @@ WHERE CustomerID IN (SELECT CustomerID FROM dbo.VIPCustomers);
 ```
 
 **Implementation Tip:** Prefer `NOT EXISTS` over `NOT IN` if the subquery can return `NULL`s.
+
+### IN vs EXISTS — common interview question
+- **IN:** Works well for small, static lists or when you need to compare a value against a set.
+- **EXISTS:** Usually more efficient for large datasets because it follows "Short-circuit" logic—it stops as soon as a match is found. 
+- **NULL Handling:** `NOT IN` returns no results if the subquery contains a `NULL`. `NOT EXISTS` handles `NULL` values correctly.
 
 ### ALL / ANY / SOME
 **Query:**
@@ -293,9 +284,9 @@ DROP VIEW IF EXISTS dbo.v_RecentOrders;
 
 ---
 
-## Stored Procedures (SQL Server)
+## Stored Procedures & Functions
 
-### CREATE PROCEDURE — reusable T‑SQL
+### Stored Procedures (usp) — reusable T‑SQL
 **Query:**
 ```sql
 CREATE OR ALTER PROCEDURE dbo.usp_GetCustomerOrders
@@ -345,7 +336,7 @@ END CATCH;
 
 ---
 
-## User-Defined Functions (SQL Server)
+### User-Defined Functions (udf)
 
 ### Scalar UDF — returns a single value
 **Query:**
@@ -371,6 +362,17 @@ AS RETURN (
 ```
 
 **Implementation Tip:** Prefer inline TVFs over multi-statement TVFs for performance.
+
+### SP vs UDF — when to use which
+| Feature | Stored Procedure (SP) | User-Defined Function (UDF) |
+| :--- | :--- | :--- |
+| **Return Value** | Optional (Return codes / Result sets) | Mandatory (Scalar or Table) |
+| **Parameters** | Input and Output | Input only |
+| **DML Support** | Can perform `INSERT/UPDATE/DELETE` | Mostly read-only (side-effects restricted) |
+| **Calling** | `EXEC procedure_name` | Can be used in `SELECT`, `WHERE`, `JOIN` |
+| **Transactions** | Can manage transactions | Cannot manage transactions |
+
+**Interview Tip:** Use Functions for computations and data transformations within queries. Use Stored Procedures for business logic, complex workflows, and data modifications.
 
 [⬆ Back to Top](#table-of-contents)
 
@@ -469,7 +471,7 @@ SELECT * FROM EmpCTE OPTION (MAXRECURSION 100);
 
 ---
 
-## Temporary Tables & Table Variables (SQL Server)
+## Temporary Tables & Table Variables
 
 ### Overview — when to use temps vs CTE vs tables
 Temporary structures persist beyond a single statement and can be indexed and referenced multiple times. 
@@ -541,7 +543,9 @@ CREATE TABLE ##BatchIds_9F2C1 (BatchID INT PRIMARY KEY);
 
 ---
 
-## CTAS (CREATE TABLE AS SELECT) — cross-engine note
+## Temporal Tables & CTAS
+
+### CTAS (CREATE TABLE AS SELECT) — cross-engine note
 SQL Server equivalent is `SELECT INTO`. PostgreSQL/MySQL support CTAS directly.
 
 **Query (PostgreSQL reference):**
@@ -566,7 +570,7 @@ CREATE INDEX IX_RecentLarge_Customer ON #RecentLarge(CustomerID);
 
 ---
 
-## Temporal Tables (system-versioned) — SQL Server
+### Temporal Tables (system-versioned)
 Automatically keeps history of row versions. Two tables: current (system-versioned) and history. Engine manages validity period columns.
 
 **Query (Create Temporal):**
@@ -634,7 +638,46 @@ CROSS APPLY (
 
 ---
 
-## JSON and XML (SQL Server specifics)
-*(Section placeholder for future content updates)*
+## Transaction Isolation Levels
+
+Isolation levels define how one transaction is isolated from concurrent changes made by other transactions.
+
+- **READ UNCOMMITTED:** Lowest level; allows "dirty reads" (reading uncommitted data).
+- **READ COMMITTED:** (Default in SQL Server) Prevents dirty reads; allows "non-repeatable reads".
+- **REPEATABLE READ:** Prevents dirty and non-repeatable reads; allows "phantom reads".
+- **SERIALIZABLE:** Highest level; prevents phantoms by locking the entire range.
+- **SNAPSHOT:** Uses row versioning instead of locks for concurrency.
+
+**Query Example:**
+```sql
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+BEGIN TRAN;
+  -- queries
+COMMIT;
+```
+
+[⬆ Back to Top](#table-of-contents)
+
+---
+
+## Index Basics: Clustered vs Non-Clustered
+
+### Clustered Index
+- Determines the **physical order** of data in the table.
+- A table can have only **one** clustered index (usually on the Primary Key).
+- The leaf level of the index **is** the actual data.
+
+### Non-Clustered Index
+- A separate structure from the data rows.
+- Contains pointers (row locators) to the actual data.
+- A table can have **multiple** non-clustered indexes.
+- Great for covering specific queries without re-sorting the whole table.
+
+**Query example:**
+```sql
+-- Clustered index is created automatically on PK
+-- Creating a Non-Clustered index for fast lookup
+CREATE NONCLUSTERED INDEX IX_Customers_Email ON dbo.Customers(Email);
+```
 
 [⬆ Back to Top](#table-of-contents)
