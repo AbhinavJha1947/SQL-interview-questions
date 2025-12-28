@@ -7,7 +7,7 @@ A comprehensive collection of SQL interview questions and answers, categorized b
 | Category | Description | Link |
 | :--- | :--- | :--- |
 | **Basic SQL** | CRUD, Core Queries, DDL, DML, Basic SELECT, Aggregates | [View Questions](./Basic%20SQL/README.md) |
-| **Intermediate SQL** | Joins, Subqueries, CTEs, Window Functions (Coming Soon) | [View Questions](./Intermediate%20SQL/) |
+| **Intermediate SQL** | Joins, Subqueries, Views, Procedures, Functions, Triggers | [View Questions](./Intermediate%20SQL/README.md) |
 | **Advanced SQL** | Optimization, Indexing, Transactions, Procedures (Coming Soon) | [View Questions](./Advanced%20SQL/) |
 
 ---
